@@ -1,5 +1,5 @@
 use sysinfo::System;
-use std::{fs, io::{self, Read, Seek, SeekFrom}, mem::MaybeUninit, process::Command, ptr};
+use std::{fs::{self, OpenOptions}, io::{self, Read, Seek, SeekFrom, Write}, mem::MaybeUninit, process::Command, ptr};
 
 
 pub fn return_pid(target:&str) -> Option<u32> {
@@ -88,4 +88,26 @@ pub fn read<T: Copy>(pid: u32, addr: usize) -> io::Result<T> {
         );
         Ok(value.assume_init())
     }
+}
+
+/// Write raw memory to a process
+pub fn write_memory(pid: u32, addr: usize, data: &[u8]) -> io::Result<()> {
+    let mut procmem = OpenOptions::new()
+        .write(true)
+        .open(format!("/proc/{}/mem", pid))?;
+
+    procmem.seek(SeekFrom::Start(addr as u64))?;
+    procmem.write_all(data)?;
+    Ok(())
+}
+
+/// Write a typed value to another process's memory
+pub fn write<T: Copy>(pid: u32, addr: usize, value: &T) -> io::Result<()> {
+    let data = unsafe {
+        std::slice::from_raw_parts(
+            (value as *const T) as *const u8,
+            size_of::<T>(),
+        )
+    };
+    write_memory(pid, addr, data)
 }
