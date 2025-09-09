@@ -1,5 +1,5 @@
 use sysinfo::System;
-use std::{fs, io::{self, Read, Seek}, process::Command};
+use std::{fs, io::{self, Read, Seek, SeekFrom}, mem::MaybeUninit, process::Command, ptr};
 
 
 pub fn return_pid(target:&str) -> Option<u32> {
@@ -62,14 +62,30 @@ fn check_protection_status() -> bool {
     false
 }
 
-pub fn read_memory(pid: u32, addr: usize, size:usize) -> io::Result<Vec<u8>>{
+/// Read raw memory from a process
+pub fn read_memory(pid: u32, addr: usize, size: usize) -> io::Result<Vec<u8>> {
     let mut procmem = fs::File::open(format!("/proc/{}/mem", pid))?;
-    procmem.seek(io::SeekFrom::Start(addr as u64))?;
-    let mut buf = vec![0;size];
+    procmem.seek(SeekFrom::Start(addr as u64))?;
+    let mut buf = vec![0; size];
     procmem.read_exact(&mut buf)?;
     Ok(buf)
 }
 
-pub fn read<T>(pid: u32, addr: usize) -> io::Result<Vec<u8>> {
-    read_memory(pid, addr, size_of::<T>())
+/// Read a typed value from another process's memory
+pub fn read<T: Copy>(pid: u32, addr: usize) -> io::Result<T> {
+    let bytes = read_memory(pid, addr, size_of::<T>())?;
+
+    if bytes.len() != size_of::<T>() {
+        return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Failed to read enough bytes"));
+    }
+
+    let mut value = MaybeUninit::<T>::uninit();
+    unsafe {
+        ptr::copy_nonoverlapping(
+            bytes.as_ptr(),
+            value.as_mut_ptr() as *mut u8,
+            size_of::<T>(),
+        );
+        Ok(value.assume_init())
+    }
 }
