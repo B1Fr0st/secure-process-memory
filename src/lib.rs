@@ -62,55 +62,55 @@ fn check_protection_status() -> bool {
     false
 }
 
-/// Read raw memory from a process
-pub fn read_memory(pid: u32, addr: usize, size: usize) -> io::Result<Vec<u8>> {
-    let mut procmem = fs::File::open(format!("/proc/{}/mem", pid))?;
-    procmem.seek(SeekFrom::Start(addr as u64))?;
-    let mut buf = vec![0; size];
-    procmem.read_exact(&mut buf)?;
-    Ok(buf)
-}
+// /// Read raw memory from a process
+// pub fn read_memory(pid: u32, addr: usize, size: usize) -> io::Result<Vec<u8>> {
+//     let mut procmem = fs::File::open(format!("/proc/{}/mem", pid))?;
+//     procmem.seek(SeekFrom::Start(addr as u64))?;
+//     let mut buf = vec![0; size];
+//     procmem.read_exact(&mut buf)?;
+//     Ok(buf)
+// }
 
-/// Read a typed value from another process's memory
-pub fn read<T: Copy>(pid: u32, addr: usize) -> io::Result<T> {
-    let bytes = read_memory(pid, addr, size_of::<T>())?;
+// /// Read a typed value from another process's memory
+// pub fn read<T: Copy>(pid: u32, addr: usize) -> io::Result<T> {
+//     let bytes = read_memory(pid, addr, size_of::<T>())?;
 
-    if bytes.len() != size_of::<T>() {
-        return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Failed to read enough bytes"));
-    }
+//     if bytes.len() != size_of::<T>() {
+//         return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Failed to read enough bytes"));
+//     }
 
-    let mut value = MaybeUninit::<T>::uninit();
-    unsafe {
-        ptr::copy_nonoverlapping(
-            bytes.as_ptr(),
-            value.as_mut_ptr() as *mut u8,
-            size_of::<T>(),
-        );
-        Ok(value.assume_init())
-    }
-}
+//     let mut value = MaybeUninit::<T>::uninit();
+//     unsafe {
+//         ptr::copy_nonoverlapping(
+//             bytes.as_ptr(),
+//             value.as_mut_ptr() as *mut u8,
+//             size_of::<T>(),
+//         );
+//         Ok(value.assume_init())
+//     }
+// }
 
-/// Write raw memory to a process
-pub fn write_memory(pid: u32, addr: usize, data: &[u8]) -> io::Result<()> {
-    let mut procmem = OpenOptions::new()
-        .write(true)
-        .open(format!("/proc/{}/mem", pid))?;
+// /// Write raw memory to a process
+// pub fn write_memory(pid: u32, addr: usize, data: &[u8]) -> io::Result<()> {
+//     let mut procmem = OpenOptions::new()
+//         .write(true)
+//         .open(format!("/proc/{}/mem", pid))?;
 
-    procmem.seek(SeekFrom::Start(addr as u64))?;
-    procmem.write_all(data)?;
-    Ok(())
-}
+//     procmem.seek(SeekFrom::Start(addr as u64))?;
+//     procmem.write_all(data)?;
+//     Ok(())
+// }
 
-/// Write a typed value to another process's memory
-pub fn write<T: Copy>(pid: u32, addr: usize, value: &T) -> io::Result<()> {
-    let data = unsafe {
-        std::slice::from_raw_parts(
-            (value as *const T) as *const u8,
-            size_of::<T>(),
-        )
-    };
-    write_memory(pid, addr, data)
-}
+// /// Write a typed value to another process's memory
+// pub fn write<T: Copy>(pid: u32, addr: usize, value: &T) -> io::Result<()> {
+//     let data = unsafe {
+//         std::slice::from_raw_parts(
+//             (value as *const T) as *const u8,
+//             size_of::<T>(),
+//         )
+//     };
+//     write_memory(pid, addr, data)
+// }
 
 pub enum ProcessCreationError{
     FailedToProtectProcess,
@@ -145,7 +145,7 @@ impl Process{
 
     /// Read a typed value from another process's memory
     pub fn read<T: Copy>(&self, addr: usize) -> io::Result<T> {
-        let bytes = read_memory(self.pid, addr, size_of::<T>())?;
+        let bytes = self.read_memory(addr, size_of::<T>())?;
 
         if bytes.len() != size_of::<T>() {
             return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Failed to read enough bytes"));
@@ -181,6 +181,6 @@ impl Process{
                 size_of::<T>(),
             )
         };
-        write_memory(self.pid, addr, data)
+        self.write_memory(addr, data)
     }
 }
