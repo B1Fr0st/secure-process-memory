@@ -112,12 +112,13 @@ fn check_protection_status() -> bool {
 //     write_memory(pid, addr, data)
 // }
 
+#[derive(Debug)]
 pub enum ProcessCreationError{
     FailedToProtectProcess,
     NotSudo
 }
 
-
+#[derive(Debug, Clone, Copy)]
 pub struct Process{
     pub pid: u32
 }
