@@ -115,12 +115,14 @@ fn check_protection_status() -> bool {
 #[derive(Debug)]
 pub enum ProcessCreationError{
     FailedToProtectProcess,
-    NotSudo
+    NotSudo,
+    FailedToGetMemFile
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct Process{
-    pub pid: u32
+    pub pid: u32,
+    file: fs::File,
 }
 
 impl Process{
@@ -131,21 +133,26 @@ impl Process{
         if protect_process() == false {
             return Err(ProcessCreationError::FailedToProtectProcess);
         }
+        let file = if let Ok(res) = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(format!("/proc/{}/mem", pid))
+            {res} else {return Err(ProcessCreationError::FailedToGetMemFile);};
         Ok(Self {
-            pid
+            pid,
+            file
         })
     }
     /// Read raw memory from a process
-    pub fn read_memory(&self, addr: usize, size: usize) -> io::Result<Vec<u8>> {
-        let mut procmem = fs::File::open(format!("/proc/{}/mem", self.pid))?;
-        procmem.seek(SeekFrom::Start(addr as u64))?;
+    pub fn read_memory(&mut self, addr: usize, size: usize) -> io::Result<Vec<u8>> {
+        self.file.seek(SeekFrom::Start(addr as u64))?;
         let mut buf = vec![0; size];
-        procmem.read_exact(&mut buf)?;
+        self.file.read_exact(&mut buf)?;
         Ok(buf)
     }
 
     /// Read a typed value from another process's memory
-    pub fn read<T: Copy>(&self, addr: usize) -> io::Result<T> {
+    pub fn read<T: Copy>(&mut self, addr: usize) -> io::Result<T> {
         let bytes = self.read_memory(addr, size_of::<T>())?;
 
         if bytes.len() != size_of::<T>() {
@@ -164,18 +171,14 @@ impl Process{
     }
 
     /// Write raw memory to a process
-    pub fn write_memory(&self, addr: usize, data: &[u8]) -> io::Result<()> {
-        let mut procmem = OpenOptions::new()
-            .write(true)
-            .open(format!("/proc/{}/mem", self.pid))?;
-
-        procmem.seek(SeekFrom::Start(addr as u64))?;
-        procmem.write_all(data)?;
+    pub fn write_memory(&mut self, addr: usize, data: &[u8]) -> io::Result<()> {
+        self.file.seek(SeekFrom::Start(addr as u64))?;
+        self.file.write_all(data)?;
         Ok(())
     }
 
     /// Write a typed value to another process's memory
-    pub fn write<T: Copy>(&self, addr: usize, value: &T) -> io::Result<()> {
+    pub fn write<T: Copy>(&mut self, addr: usize, value: &T) -> io::Result<()> {
         let data = unsafe {
             std::slice::from_raw_parts(
                 (value as *const T) as *const u8,
