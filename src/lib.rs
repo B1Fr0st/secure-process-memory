@@ -158,11 +158,11 @@ mod platform {
 
 #[cfg(target_os="windows")]
 mod platform {
-    use std::io::{self, Error, ErrorKind, Read};
+    use std::io::{self, Error};
+    use std::mem::MaybeUninit;
     use std::os::raw::c_void;
     use std::ptr;
     use windows::{
-        core::PWSTR,
         Win32::Foundation::{CloseHandle, HANDLE},
         Win32::System::Diagnostics::{
             ToolHelp::{
@@ -170,7 +170,7 @@ mod platform {
             PROCESSENTRY32W, TH32CS_SNAPPROCESS},
             Debug::{ReadProcessMemory,WriteProcessMemory}
         },
-        Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS, PROCESS_VM_READ, PROCESS_VM_WRITE},
+        Win32::System::Threading::{OpenProcess, PROCESS_VM_READ, PROCESS_VM_WRITE},
     };
 
 
@@ -180,14 +180,14 @@ mod platform {
             ..Default::default()
         };
 
-        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)? };
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()? };
 
         let mut process = None;
         
-        if unsafe { Process32FirstW(snapshot, &mut entry) }.as_bool() {
+        if unsafe { Process32FirstW(snapshot, &mut entry) }.is_ok() {
             loop {
                 // Convert the wide string to a regular string for comparison
-                let process_name = unsafe {
+                let process_name = {
                     let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
                     String::from_utf16_lossy(&entry.szExeFile[..len])
                 };
@@ -196,12 +196,12 @@ mod platform {
                     process = Some(entry.th32ProcessID);
                 }
 
-                if !unsafe { Process32NextW(snapshot, &mut entry) }.as_bool() {
+                if unsafe { Process32NextW(snapshot, &mut entry) }.is_err() {
                     break;
                 }
             }
         }
-        unsafe { CloseHandle(snapshot)? };
+        unsafe { CloseHandle(snapshot).ok()? };
 
         process
     }
@@ -220,15 +220,19 @@ mod platform {
     }
     impl Process{
         pub fn new(pid:u32) -> Result<Self,ProcessCreationError>{
-            let process_handle = unsafe { OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE, 0, pid) };
-            if process_handle == 0 {
-                return ProcessCreationError::FailedToGetProcess;
-            }
-            Ok(
+            let process_handle = unsafe { OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE, false, pid) };
+            match process_handle {
+                Ok(process_handle) =>{
+                    Ok(
                 Self {
                     process_handle
                 }
             )
+                },
+                Err(_) => {
+                    Err(ProcessCreationError::FailedToGetProcess)
+                }
+            }
         }
         /// Read raw memory from a process
         pub fn read_memory(&mut self, addr: usize, size: usize) -> io::Result<Vec<u8>> {
@@ -242,10 +246,8 @@ mod platform {
                     size,
                     Some(&mut bytes_read)
                 )
-            } == 0 {
-                Error(ErrorKind::InvalidData)
-            } else if bytes_read != size{
-                Error(ErrorKind::UnexpectedEof)
+            }.is_err() || bytes_read != size {
+                Err(Error::last_os_error())
             } else {
                 Ok(buf)
             }
@@ -281,10 +283,8 @@ mod platform {
                     data.len(),
                     Some(&mut bytes_written)
                 )
-            } == 0 {
-                Error(ErrorKind::InvalidData)
-            } else if bytes_written != size{
-                Error(ErrorKind::UnexpectedEof)
+            }.is_err() || bytes_written != data.len() {
+                Err(Error::last_os_error())
             } else {
                 Ok(())
             }
