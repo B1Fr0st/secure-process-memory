@@ -170,7 +170,7 @@ mod platform {
             PROCESSENTRY32W, TH32CS_SNAPPROCESS},
             Debug::{ReadProcessMemory,WriteProcessMemory}
         },
-        Win32::System::Threading::{OpenProcess, PROCESS_VM_READ, PROCESS_VM_WRITE},
+        Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS},
     };
 
 
@@ -220,7 +220,7 @@ mod platform {
     }
     impl Process{
         pub fn new(pid:u32) -> Result<Self,ProcessCreationError>{
-            let process_handle = unsafe { OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE, false, pid) };
+            let process_handle = unsafe { OpenProcess(PROCESS_ALL_ACCESS, false, pid) };
             match process_handle {
                 Ok(process_handle) =>{
                     Ok(
