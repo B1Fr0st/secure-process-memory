@@ -167,10 +167,11 @@ mod platform {
         Win32::System::Diagnostics::{
             ToolHelp::{
             CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, 
-            PROCESSENTRY32W, TH32CS_SNAPPROCESS},
+            PROCESSENTRY32W, TH32CS_SNAPPROCESS, Module32FirstW, Module32NextW, MODULEENTRY32W,
+        TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32},
             Debug::{ReadProcessMemory,WriteProcessMemory}
         },
-        Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS},
+        Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS,GetProcessId},
     };
 
 
@@ -237,6 +238,70 @@ mod platform {
                 Err(_) => {
                     Err(ProcessCreationError::FailedToGetProcess)
                 }
+            }
+        }
+        
+        /// Gets the base address of the main module (executable) for this process
+        pub fn get_base_address(&self) -> windows::core::Result<*mut u8> {
+            unsafe {
+                // Get the process ID from the handle
+                let process_id = GetProcessId(self.process_handle);
+                
+                // Create a snapshot of all modules in the process
+                let snapshot = CreateToolhelp32Snapshot(
+                    TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
+                    process_id,
+                )?;
+                
+                // Initialize the module entry structure
+                let mut module_entry = MODULEENTRY32W {
+                    dwSize: std::mem::size_of::<MODULEENTRY32W>() as u32,
+                    ..Default::default()
+                };
+                
+                // Get the first module (which is typically the main executable)
+                if Module32FirstW(snapshot, &mut module_entry).is_ok() {
+                    // The first module's base address is what we want
+                    Ok(module_entry.modBaseAddr)
+                } else {
+                    Err(windows::core::Error::empty())
+                }
+            }
+        }
+        
+        /// Gets the base address of a specific module by name
+        pub fn get_module_base_address(&self, module_name: &str) -> windows::core::Result<Option<*mut u8>> {
+            unsafe {
+                let process_id = GetProcessId(self.process_handle);
+                
+                let snapshot = CreateToolhelp32Snapshot(
+                    TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
+                    process_id,
+                )?;
+                
+                let mut module_entry = MODULEENTRY32W {
+                    dwSize: std::mem::size_of::<MODULEENTRY32W>() as u32,
+                    ..Default::default()
+                };
+                
+                // Iterate through all modules
+                if Module32FirstW(snapshot, &mut module_entry).is_ok() {
+                    loop {
+                        // Convert the module name from UTF-16 to compare
+                        let current_name = String::from_utf16_lossy(&module_entry.szModule);
+                        
+                        if current_name.trim_end_matches('\0').eq_ignore_ascii_case(module_name) {
+                            return Ok(Some(module_entry.modBaseAddr));
+                        }
+                        
+                        // Move to the next module
+                        if Module32NextW(snapshot, &mut module_entry).is_err() {
+                            break;
+                        }
+                    }
+                }
+                
+                Ok(None)
             }
         }
         /// Read raw memory from a process
