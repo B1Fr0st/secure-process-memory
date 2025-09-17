@@ -214,7 +214,7 @@ mod platform {
         FailedToGetProcess
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub struct Process{
         pub process_handle: HANDLE,
     }
