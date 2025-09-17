@@ -218,6 +218,11 @@ mod platform {
     pub struct Process{
         pub process_handle: HANDLE,
     }
+
+    //fuck it we ball
+    unsafe impl Send for Process {}
+    unsafe impl Sync for Process {}
+
     impl Process{
         pub fn new(pid:u32) -> Result<Self,ProcessCreationError>{
             let process_handle = unsafe { OpenProcess(PROCESS_ALL_ACCESS, false, pid) };
